@@ -25,9 +25,10 @@ def cosine_similarity(left, right):
 
 
 class Retriever:
-    def __init__(self, documents):
+    def __init__(self, documents, tokenizer=tokenize):
         self.documents = list(documents)
-        counts = [Counter(tokenize(doc["text"])) for doc in self.documents]
+        self.tokenizer = tokenizer
+        counts = [Counter(self.tokenizer(doc["text"])) for doc in self.documents]
         frequency = Counter(term for count in counts for term in count)
         # Smoothed IDF keeps terms appearing in every document meaningful.
         self.idf = {
@@ -48,7 +49,7 @@ class Retriever:
         """
         if top_k < 1:
             raise ValueError("top_k must be at least 1")
-        query_vector = self._vector(Counter(tokenize(query)))
+        query_vector = self._vector(Counter(self.tokenizer(query)))
         matches = [(doc, cosine_similarity(query_vector, vector))
                    for doc, vector in zip(self.documents, self.vectors)]
         return sorted((match for match in matches if match[1] > 0),
