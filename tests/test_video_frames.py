@@ -33,7 +33,7 @@ class VideoFrameTests(unittest.TestCase):
 
     def test_sampling_metadata_and_saved_images(self):
         capture = self.mock_capture()
-        metadata = extract_frames(self.video, self.output)
+        metadata = extract_frames(self.video, self.output, interval=5)
         self.assertEqual([item["timestamp"] for item in metadata], [0, 5, 10])
         self.assertEqual([item["frame_index"] for item in metadata], [0, 10, 20])
         self.assertEqual(json.loads((self.output / "frames.json").read_text()), metadata)
@@ -45,12 +45,12 @@ class VideoFrameTests(unittest.TestCase):
         capture.release.assert_called_once()
 
     def test_short_video(self):
-        self.mock_capture(frame_count=3)
+        self.mock_capture(frame_count=2)
         self.assertEqual(len(extract_frames(self.video, self.output)), 1)
 
     def test_fractional_fps_samples_first_frame_after_target(self):
         self.mock_capture(fps=2.5, frame_count=27)
-        metadata = extract_frames(self.video, self.output)
+        metadata = extract_frames(self.video, self.output, interval=5)
         self.assertEqual([item["frame_index"] for item in metadata], [0, 13, 25])
         self.assertEqual([item["timestamp"] for item in metadata], [0, 5.2, 10])
 
@@ -106,13 +106,28 @@ class VideoFrameTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(script), str(self.video)],
                                 cwd=self.root, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Saved 3 frames", result.stdout)
+        self.assertIn("Saved 11 frames", result.stdout)
         metadata = json.loads((self.output / "frames.json").read_text())
-        self.assertEqual([item["timestamp"] for item in metadata], [0, 5, 10])
+        self.assertEqual([item["timestamp"] for item in metadata], list(range(11)))
         for item in metadata:
             image = cv2.imread(str(self.root / item["frame_path"]))
             self.assertIsNotNone(image)
             self.assertAlmostEqual(float(image.mean()), item["frame_index"] * 10, delta=8)
+
+        result = subprocess.run(
+            [sys.executable, str(script), str(self.video), "--interval", "5",
+             "--output-dir", "five_seconds"],
+            cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        metadata = json.loads((self.root / "five_seconds" / "frames.json").read_text())
+        self.assertEqual([item["timestamp"] for item in metadata], [0, 5, 10])
+
+    def test_invalid_intervals(self):
+        for interval in (0, -1, float("nan"), float("inf")):
+            with self.subTest(interval=interval):
+                with self.assertRaisesRegex(ValueError, "interval"):
+                    extract_frames(self.video, self.output, interval=interval)
+        self.assertFalse(self.output.exists())
 
 
 if __name__ == "__main__":
