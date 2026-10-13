@@ -1,0 +1,7 @@
+[
+  {"id": "rag", "title": "Retrieval augmented generation", "text": "Retrieval augmented generation (RAG) retrieves relevant documents to provide context for a language model. Retrieved context helps ground generated answers in source material."},
+  {"id": "tfidf", "title": "TF-IDF scoring", "text": "TF-IDF combines term frequency with inverse document frequency. Rare terms receive more weight than terms shared across many documents."},
+  {"id": "cosine", "title": "Cosine similarity", "text": "Cosine similarity compares the angle between two vectors. In text retrieval, document and query vectors are compared to rank relevant documents."},
+  {"id": "python", "title": "Python testing", "text": "Python includes unittest in its standard library. Unit tests check expected behavior and help catch regressions when code changes."},
+  {"id": "gardening", "title": "Growing tomatoes", "text": "Tomatoes grow best with sunlight, regular watering, and well drained soil. Gardeners can use compost to improve soil nutrients."}
+]
