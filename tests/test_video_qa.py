@@ -107,5 +107,104 @@ class VideoQATests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["status"], "prompt_only")
 
 
+class FusionTests(unittest.TestCase):
+    def setUp(self):
+        self.transcript = {"video_filename": "test.mp4", "segments": [
+            {"start": 0, "end": 5, "text": "مردم اعتماد کردند"},
+            {"start": 20, "end": 25, "text": "مردم دوباره اعتماد کردند"}]}
+        self.captions = [{"timestamp": i, "caption": "people in a classroom",
+                          "frame_path": f"frames/{i}.jpg", "video_filename": "test.mp4"}
+                         for i in (1, 2)]
+
+    def test_asr_default_preserves_ids_and_ignores_visual_input(self):
+        default = ask_video(self.transcript, "مردم", dry_run=True, captions=self.captions)
+        explicit = ask_video(self.transcript, "مردم", dry_run=True, mode="asr")
+        self.assertEqual(default, explicit)
+        self.assertTrue(all(item["type"] == "asr" for item in default["evidence"]))
+        self.assertTrue(default["evidence"][0]["id"].startswith("chunk_"))
+
+    def test_visual_only_and_point_citation(self):
+        backend = Mock()
+        backend.complete.return_value = json.dumps({"answer": "افرادی در کلاس دیده می‌شوند.",
+            "abstained": False, "citations": [{"evidence_id": "visual_0000",
+                                               "quote": "people in a classroom"}]})
+        result = ask_video(None, "classroom", backend, mode="visual", captions=self.captions)
+        self.assertEqual(result["status"], "answered")
+        self.assertTrue(all(item["type"] == "visual" for item in result["evidence"]))
+        citation = result["citations"][0]
+        self.assertEqual((citation["start"], citation["end"]), (1, 1))
+        self.assertEqual(citation["type"], "visual")
+        self.assertEqual(citation["frame_path"], "frames/1.jpg")
+
+    def test_multimodal_separate_budgets_and_prompt_provenance(self):
+        result = ask_video(self.transcript, "مردم", dry_run=True, mode="multimodal",
+                           captions=self.captions, asr_top_k=1, visual_top_k=2,
+                           visual_query="classroom")
+        self.assertEqual([item["type"] for item in result["evidence"]], ["asr", "visual", "visual"])
+        self.assertEqual(len({item["id"] for item in result["evidence"]}), 3)
+        prompt = json.loads(result["messages"][1]["content"])["evidence"]
+        self.assertEqual(prompt[0]["type"], "asr")
+        self.assertEqual(prompt[1]["frame_path"], "frames/1.jpg")
+        self.assertIn("not speech", result["messages"][0]["content"])
+
+    @patch("video_qa.search_transcript")
+    @patch("video_qa.search_captions")
+    def test_scores_are_not_sorted_across_modalities(self, visual, asr):
+        asr.return_value = [{"id": "chunk_0000", "start": 0, "end": 5, "text": "مردم", "score": .01}]
+        visual.return_value = [{"id": "visual_0000", "type": "visual", "start": 1,
+                                "end": 1, "text": "people", "frame_path": "x.jpg", "score": .99}]
+        result = ask_video(self.transcript, "مردم", dry_run=True, mode="multimodal",
+                           captions=self.captions, asr_top_k=2, visual_top_k=1)
+        self.assertEqual([item["id"] for item in result["evidence"]], ["chunk_0000", "visual_0000"])
+        self.assertEqual(asr.call_args.args[2], 2)
+        self.assertEqual(visual.call_args.args[2], 1)
+
+    def test_multimodal_citations_validate_both_sources(self):
+        evidence = ask_video(self.transcript, "مردم", dry_run=True, mode="multimodal",
+                             captions=self.captions, visual_query="classroom")["evidence"]
+        content = json.dumps({"answer": "test", "abstained": False, "citations": [
+            {"evidence_id": evidence[0]["id"], "quote": "مردم"},
+            {"evidence_id": "visual_0000", "quote": "classroom"}]})
+        citations = validate_answer(content, evidence)["citations"]
+        self.assertEqual([c["type"] for c in citations], ["asr", "visual"])
+        with self.assertRaises(ValueError):
+            validate_answer(content.replace("classroom", "invented"), evidence)
+        with self.assertRaisesRegex(ValueError, "unique"):
+            validate_answer(content, evidence + [evidence[0]])
+
+    def test_abstention_in_each_mode(self):
+        for mode in ("asr", "visual", "multimodal"):
+            backend = Mock()
+            no_matches = ask_video(self.transcript, "unknownxyz", backend,
+                                   mode=mode, captions=self.captions)
+            self.assertEqual(no_matches["status"], "no_evidence")
+            backend.complete.assert_not_called()
+            backend.complete.return_value = json.dumps({"answer": "شواهد کافی نیست.",
+                                                        "abstained": True, "citations": []})
+            result = ask_video(self.transcript, "مردم classroom", backend,
+                               mode=mode, captions=self.captions)
+            self.assertEqual(result["status"], "abstained")
+
+    def test_visual_does_not_translate_persian_queries(self):
+        result = ask_video(None, "کلاس", mode="visual", captions=self.captions)
+        self.assertEqual(result["status"], "no_evidence")
+
+    def test_required_captions_and_mode_validation(self):
+        for mode in ("visual", "multimodal", "invalid"):
+            with self.assertRaises(ValueError):
+                ask_video(self.transcript, "مردم", mode=mode, dry_run=True)
+
+    def test_visual_cli_does_not_require_transcript(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "captions.json"
+            path.write_text(json.dumps(self.captions))
+            script = Path(__file__).resolve().parents[1] / "video_qa.py"
+            result = subprocess.run([sys.executable, str(script), "--mode", "visual",
+                "--captions", str(path), "--transcript", "missing.json",
+                "--question", "classroom", "--dry-run"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["evidence"][0]["type"], "visual")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -208,8 +208,8 @@ including exact evidence and source segment timestamps; it is Git-ignored.
 `video_qa.py` retrieves timestamped ASR chunks using `video_retrieval.py`, then
 optionally sends those chunks and the question to a configurable OpenAI-compatible
 Chat Completions API. It uses Python's standard library for HTTP and adds no
-dependencies. This question-answering path uses ASR text only; visual captions
-are not fused into retrieval or the prompt, so it is not fully multimodal.
+dependencies. ASR-only remains the default. v0.2 optionally fuses ASR text and
+visual caption evidence; it does not send images or video directly to the LLM.
 
 Validate retrieval and inspect the exact prompt without an endpoint or API key:
 
@@ -262,6 +262,47 @@ errors or insufficient evidence; inspect the cited passages. No real generated
 answer has been validated in the current environment because no LLM endpoint,
 model configuration, or credential is available. Mocked tests exercise supported
 answers, abstention, citations, API requests, failures, and the dry-run CLI.
+
+### v0.2 evidence fusion modes
+
+`--mode asr` (default) preserves the previous CLI and retrieval behavior. It does
+not load captions, even if `--captions` is supplied. ASR evidence retains its
+`chunk_...` IDs and now explicitly carries `type: "asr"`.
+
+`--mode visual` requires `--captions` and does not read a transcript. Visual
+evidence retains `visual_...` IDs, `type: "visual"`, frame paths, and point
+timestamps (`start == end`). `--mode multimodal` requires both the transcript
+and `--captions`; it appends independently ranked visual results after ASR results.
+
+```bash
+python video_qa.py --mode visual --captions outputs/captions.json \
+  --question "What is visible in the classroom?" --visual-top-k 2 --dry-run
+
+python video_qa.py --mode multimodal --captions outputs/captions.json \
+  --question "چرا مردم دوباره اعتماد کردند؟" --visual-query "people classroom" \
+  --asr-top-k 3 --visual-top-k 2 --dry-run
+```
+
+`--asr-top-k` defaults to the existing `--top-k` value; `--visual-top-k` defaults
+to 3. Each modality has its own budget and within-modality ranking. Their TF-IDF
+scores use different corpora and are never compared or globally sorted. Evidence
+IDs remain distinct across modalities, and prompts include source type, video
+filename, timestamp bounds, and visual frame path. Citation validation accepts
+ASR intervals and visual points and adds source type/frame path to citations.
+
+The prompt tells Qwen (or another configured compatible LLM) to distinguish
+spoken content from model-generated visual descriptions and to abstain for
+unsupported claims, conflicting or insufficient evidence. Existing API/model
+configuration is unchanged; remove `--dry-run` to use your configured backend.
+
+**Cross-language limitation:** ASR is Persian, but current captions are English.
+TF-IDF does not translate questions. A Persian question may retrieve no visual
+evidence, even when a relevant frame exists. `--visual-query` supplies a separate
+English retrieval query without changing the original question sent to the LLM.
+No translation, embedding model, or new dependency is introduced. A returned
+caption describes a single frame and does not establish identities, motivations,
+speech, or events between frames. This is evidence fusion rather than a fully
+multimodal perception system; ASR and caption errors remain possible.
 
 ## Query the collection
 
