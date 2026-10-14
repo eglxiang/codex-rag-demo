@@ -1,5 +1,88 @@
 # Python retrieval and Video-RAG MVP
 
+## Video-RAG Explorer web demo
+
+The modular Gradio demo has three research tabs:
+
+- **Video-RAG QA** shows the local MP4, accepts English/Persian questions, and
+  reuses ASR/visual/multimodal evidence retrieval and validated citations. Answers,
+  source types, timestamps, scores, and exact evidence are displayed. A retrieval
+  only checkbox lets you inspect real evidence without an LLM call.
+- **Visual Caption Comparison** displays an extracted frame and compares an
+  independent description against context-conditioned Qwen2.5-VL-3B analysis.
+  Both prompts separate observations, contextual inferences, and uncertainty.
+- **Temporal Understanding** displays two frames with their actual timestamps
+  and analyzes continuity, correspondence hypotheses, state changes, and uncertainty.
+  Object correspondence is a model hypothesis, not verified tracking.
+
+Use Python 3.10+ and an existing virtual environment with platform-appropriate
+PyTorch installed. Install the demo profile **after** any older captioning profile
+(the demo requires a newer Transformers version for Qwen2.5-VL):
+
+```bash
+source .venv/bin/activate
+python -m pip install -r requirements-demo.txt
+```
+
+This installs software dependencies only. The app never downloads model weights,
+videos, or datasets. Prepare the local MP4, `outputs/frames.json`, referenced
+JPEGs, `outputs/transcript_small.json`, and `outputs/captions.json` separately using
+the existing CLIs. Missing files give an error on the relevant operation; an absent
+frame metadata file leaves the frame selectors empty. Relative frame paths resolve
+from the repository root; paths must match real files (duplicated `frames/frames/`
+paths are not silently repaired). Use `--video`, `--frames`, `--transcript`, and
+`--captions` to select other local inputs.
+
+QA connects to your **already running** vLLM server at `http://localhost:8000/v1`.
+The app neither starts nor modifies vLLM. Set `VIDEO_RAG_LLM_MODEL` to its served
+model name, or leave it unset to discover a single model via `/models` on demand.
+`VIDEO_RAG_LLM_BASE_URL` / `--base-url` overrides the API base. If the server requires
+a key, supply `VIDEO_RAG_LLM_API_KEY` securely. No key is sent when it is unset.
+English captions and Persian ASR still have the documented lexical cross-language
+retrieval limitation; supply an English visual query as needed.
+
+For the two visual tabs, set `QWEN_VL_MODEL_PATH` to your **existing local**
+Qwen2.5-VL-3B-Instruct checkpoint directory. `QWEN_VL_DEVICE` / `--device` selects
+the device (default `cuda:0`; `cpu` is supported but slow). No cache path or model
+hub fallback is built in. The checkpoint and processor load lazily on the first
+visual request with `local_files_only=True`; images use the shared inference logic
+in `experiments/visual_backend.py`, also used by the experiment scripts. The model
+remains resident afterward, so choose a GPU with available memory alongside your
+vLLM deployment. Visual inference is serialized; the demo does not reconfigure vLLM
+or free its allocations. Research outputs may hallucinate and are not ground truth.
+
+Start on the remote machine from the repository directory:
+
+```bash
+python gradio_demo.py
+```
+
+Run SSH forwarding on your workstation, replacing `user@host` with your remote
+login:
+
+```bash
+ssh -N -L 7860:127.0.0.1:7860 user@host
+```
+
+Then open your workstation browser on loopback port 7860. The server binds only
+`127.0.0.1:7860`, with `share=False`; public Gradio sharing is disabled. Only the
+configured video and existing indexed frame files are explicitly allowed for
+serving. Access is intended for the SSH user; do not expose this research UI to
+an untrusted network. The app writes no research outputs or model weights.
+
+Run the full test suite with the demo dependencies installed:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Demo tests cover all QA modes, mocked answers/citations, independent/context
+prompts, temporal timestamps, frame validation, served-model discovery, lazy offline
+model loading, actual Gradio tab construction, and loopback launch configuration.
+Codex validation covered local UI startup, real-data retrieval and frame previews,
+and mocked model integration. CUDA and the existing vLLM service were unavailable
+in that environment; successful GPU or live vLLM inference is not claimed.
+
 A small demo of the retrieval stage of retrieval augmented generation (RAG).
 It ranks a sample document collection using TF-IDF and cosine similarity and
 prints the retrieved text, which could be passed to a language model as context.
