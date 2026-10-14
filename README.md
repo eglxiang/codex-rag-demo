@@ -60,7 +60,7 @@ The child inherits `CUDA_VISIBLE_DEVICES`; offline Hugging Face flags and
 `local_files_only=True` prevent weight downloads. Standalone experiment and other
 CLI entrypoints keep their existing behavior. Research outputs may hallucinate.
 
-### BRTX deployment with separate CPU and GPU environments
+### Deployment with separate CPU and GPU environments
 
 #### Reproducible scripts and tmux operations
 
