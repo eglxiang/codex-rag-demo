@@ -62,6 +62,104 @@ CLI entrypoints keep their existing behavior. Research outputs may hallucinate.
 
 ### BRTX deployment with separate CPU and GPU environments
 
+#### Reproducible scripts and tmux operations
+
+`scripts/start_demo.sh` uses the existing project `.venv`, changes to the project
+directory, and starts only Gradio on `127.0.0.1:7860`. It passes additional CLI
+arguments through unchanged. `scripts/demo_status.sh` checks the app/tunnel tmux
+sessions and the local Gradio configuration endpoint. No script installs software,
+downloads models, provisions environments, or starts/modifies vLLM.
+
+Set machine-specific paths in your shell (or a private shell file outside Git):
+
+```bash
+export BRTX_PROJECT_DIR="$HOME/codex-rag-demo"
+export BRTX_VENV_DIR="$BRTX_PROJECT_DIR/.venv"
+export QWEN_VL_PYTHON="$HOME/venvs/vllm/bin/python"
+export QWEN_VL_MODEL_PATH="/absolute/path/to/existing/checkpoint"
+export CUDA_VISIBLE_DEVICES=1
+export QWEN_VL_DEVICE=cuda:0
+export BRTX_DEMO_SESSION=videorag-demo
+export BRTX_TUNNEL_SESSION=videorag-tunnel
+cd "$BRTX_PROJECT_DIR"
+```
+
+The project path defaults to the script's repository and the virtualenv defaults
+to its `.venv`. Visual paths are required only when visual inference is requested.
+Keep the existing `VIDEO_RAG_LLM_*` settings for QA, or let the app discover the
+existing localhost vLLM model. Never save API keys in tracked files.
+
+Start Gradio in tmux (tmux 3.2+). Explicit `-e` settings prevent an older tmux
+server's environment from replacing your current configuration:
+
+```bash
+tmux new-session -d -s "$BRTX_DEMO_SESSION" -c "$BRTX_PROJECT_DIR" \
+  -e "BRTX_PROJECT_DIR=$BRTX_PROJECT_DIR" \
+  -e "BRTX_VENV_DIR=$BRTX_VENV_DIR" \
+  -e "QWEN_VL_PYTHON=$QWEN_VL_PYTHON" \
+  -e "QWEN_VL_MODEL_PATH=$QWEN_VL_MODEL_PATH" \
+  -e "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES" \
+  -e "QWEN_VL_DEVICE=$QWEN_VL_DEVICE" \
+  -e "VIDEO_RAG_LLM_BASE_URL=${VIDEO_RAG_LLM_BASE_URL:-http://localhost:8000/v1}" \
+  -e "VIDEO_RAG_LLM_MODEL=${VIDEO_RAG_LLM_MODEL:-}" \
+  -e "VIDEO_RAG_LLM_API_KEY=${VIDEO_RAG_LLM_API_KEY:-}" \
+  'exec bash scripts/start_demo.sh'
+bash scripts/demo_status.sh
+tmux attach-session -t "=$BRTX_DEMO_SESSION"
+```
+
+Detach with **Ctrl-b, d**. Startup fails rather than replacing an existing session.
+Session existence alone does not prove readiness: check the HTTP result and pane
+logs. `demo_status.sh` exits nonzero if the app session or HTTP check fails; the
+tunnel is optional. An existing Gradio process on port 7860 must be stopped before
+starting another. Use SSH forwarding as described above for private access.
+
+An optional Cloudflare Quick Tunnel can be started **separately and explicitly**
+after local readiness succeeds. It exposes the entire demo with **no
+authentication**: anyone with the generated URL can view the video/evidence and
+invoke inference. It is intended only for temporary testing with non-sensitive
+data. Gradio still binds to loopback and `share=False`, but the Cloudflare tunnel
+creates public access. The tunnel consumes network access to Cloudflare; it is
+not started automatically by the app or status script.
+
+```bash
+# Use an already installed binary; no installer or login is run.
+export BRTX_CLOUDFLARED=/absolute/path/to/existing/cloudflared
+tmux new-session -d -s "$BRTX_TUNNEL_SESSION" -c "$BRTX_PROJECT_DIR" \
+  -e "BRTX_CLOUDFLARED=$BRTX_CLOUDFLARED" \
+  'exec bash scripts/start_quick_tunnel.sh'
+tmux attach-session -t "=$BRTX_TUNNEL_SESSION"
+```
+
+Read the temporary URL from cloudflared's output; it may change on every restart.
+No temporary URL or credential belongs in Git. Automatic cloudflared updates are
+disabled. Quick Tunnels may conflict with an existing cloudflared configuration;
+inspect its error rather than overwriting credentials or configuration. If the
+binary or required network access is unavailable, the script fails without
+installing or configuring anything.
+
+Status, recent logs, and shutdown:
+
+```bash
+bash scripts/demo_status.sh
+tmux capture-pane -p -t "=$BRTX_DEMO_SESSION" -S -50
+tmux capture-pane -p -t "=$BRTX_TUNNEL_SESSION" -S -50
+
+# Stop public access first, then stop Gradio gracefully.
+tmux send-keys -t "=$BRTX_TUNNEL_SESSION" C-c
+tmux send-keys -t "=$BRTX_DEMO_SESSION" C-c
+bash scripts/demo_status.sh
+```
+
+If a session persists after Ctrl-C, inspect it and use
+`tmux kill-session -t "=$BRTX_TUNNEL_SESSION"` or
+`tmux kill-session -t "=$BRTX_DEMO_SESSION"` only for that demo session. Do not
+kill the tmux server or vLLM session. Confirm port 7860 is closed and the tunnel
+session is gone; status intentionally returns nonzero after shutdown. Active GPU
+workers have a timeout, so also check that their requests have ended before
+reusing GPU memory. Deployment tests use fake Python/cloudflared/tmux/curl commands
+and do not open a public tunnel or require CUDA.
+
 Use the existing environments without installing or modifying packages in either:
 
 ```bash
