@@ -6,7 +6,8 @@ import os
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from experiments.visual_backend import LocalVisualBackend, temporal_prompt, visual_prompt
+from experiments.visual_backend import temporal_prompt, visual_prompt
+from experiments.subprocess_backend import SubprocessVisualBackend
 from video_qa import OpenAICompatibleBackend, ask_video
 
 
@@ -32,7 +33,7 @@ def read_json(path):
 class DemoServices:
     def __init__(self, config, visual_backend=None):
         self.config = config
-        self.visual = visual_backend or LocalVisualBackend(config.model_path, config.device)
+        self.visual = visual_backend or SubprocessVisualBackend(config.model_path, config.device)
         self.frames = read_json(config.frames) if config.frames.is_file() else []
         if not isinstance(self.frames, list):
             raise ValueError("Frame metadata must be a list")

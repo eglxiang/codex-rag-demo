@@ -41,15 +41,51 @@ a key, supply `VIDEO_RAG_LLM_API_KEY` securely. No key is sent when it is unset.
 English captions and Persian ASR still have the documented lexical cross-language
 retrieval limitation; supply an English visual query as needed.
 
-For the two visual tabs, set `QWEN_VL_MODEL_PATH` to your **existing local**
-Qwen2.5-VL-3B-Instruct checkpoint directory. `QWEN_VL_DEVICE` / `--device` selects
-the device (default `cuda:0`; `cpu` is supported but slow). No cache path or model
-hub fallback is built in. The checkpoint and processor load lazily on the first
-visual request with `local_files_only=True`; images use the shared inference logic
-in `experiments/visual_backend.py`, also used by the experiment scripts. The model
-remains resident afterward, so choose a GPU with available memory alongside your
-vLLM deployment. Visual inference is serialized; the demo does not reconfigure vLLM
-or free its allocations. Research outputs may hallucinate and are not ground truth.
+For the two visual tabs, set `QWEN_VL_PYTHON` to a separate GPU environment's
+Python executable and `QWEN_VL_MODEL_PATH` to your **existing local** Qwen2.5-VL-3B
+checkpoint directory. `QWEN_VL_DEVICE` / `--device` selects the device (default
+`cuda:0`). `CUDA_VISIBLE_DEVICES` controls which physical GPUs the worker sees;
+device indices refer to that visible list, not the original physical GPU numbering.
+No cache path or model-hub fallback is built in.
+
+Gradio never loads Qwen2.5-VL in its own process. On each visual inference request,
+it starts `experiments/visual_worker.py` with the configured Python, passes absolute
+frame paths, prompt, checkpoint, and device via UTF-8 JSON on stdin, and receives
+JSON on stdout. Model logs go to stderr. The worker uses the shared local-only
+inference logic and exits after generation, releasing its model allocations.
+Comparison runs two independent worker requests; model reload overhead is expected.
+Workers are serialized, use a 300-second timeout, and report missing configuration,
+missing packages, CUDA errors, invalid responses, and timeouts to the Gradio UI.
+The child inherits `CUDA_VISIBLE_DEVICES`; offline Hugging Face flags and
+`local_files_only=True` prevent weight downloads. Standalone experiment and other
+CLI entrypoints keep their existing behavior. Research outputs may hallucinate.
+
+### BRTX deployment with separate CPU and GPU environments
+
+Use the existing environments without installing or modifying packages in either:
+
+```bash
+cd ~/codex-rag-demo
+export QWEN_VL_PYTHON="$HOME/venvs/vllm/bin/python"
+export QWEN_VL_MODEL_PATH="/absolute/path/to/your/existing/Qwen2.5-VL-3B-checkpoint"
+export CUDA_VISIBLE_DEVICES=1
+export QWEN_VL_DEVICE=cuda:0
+export GRADIO_ANALYTICS_ENABLED=False
+.venv/bin/python gradio_demo.py
+```
+
+Replace the checkpoint path with the tested local directory, and select a physical
+GPU with free memory. With `CUDA_VISIBLE_DEVICES=1`, that GPU is exposed to the
+worker as `cuda:0`. Gradio remains in `.venv` with CPU-only PyTorch; inference uses
+the already tested `~/venvs/vllm/bin/python` (PyTorch 2.8.0+cu128). The executable's
+venv path is preserved even if it is a symlink, so its environment stays selected.
+No packages, weights, videos, or datasets are installed or downloaded by the app.
+
+The existing vLLM server remains separate and unchanged at port 8000. Choose a GPU
+with enough free memory for worker loading alongside vLLM, or use a different GPU;
+the demo does not alter vLLM GPU visibility, configuration, processes, or allocations.
+The QA tab continues using the same OpenAI-compatible API backend. Missing visual
+configuration does not prevent QA, frame previews, or Gradio startup.
 
 Start on the remote machine from the repository directory:
 
