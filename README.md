@@ -65,8 +65,19 @@ CLI entrypoints keep their existing behavior. Research outputs may hallucinate.
 #### Reproducible scripts and tmux operations
 
 `scripts/start_demo.sh` uses the existing project `.venv`, changes to the project
-directory, and starts only Gradio on `127.0.0.1:7860`. It passes additional CLI
-arguments through unchanged. `scripts/demo_status.sh` checks the app/tunnel tmux
+directory, and starts only Gradio on `127.0.0.1:7860`. With no arguments it launches
+`gradio_demo.py --frames outputs/frames/frames.json --model Qwen/Qwen2.5-7B-Instruct`.
+These BRTX defaults refer to existing frame metadata and the existing vLLM served
+model; they do not create files, download models, or change vLLM configuration.
+Any explicit CLI arguments replace the entire default argument list and pass
+through unchanged, for example:
+
+```bash
+bash scripts/start_demo.sh --frames outputs/frames.json --model your-served-model
+```
+
+Other unspecified options then use the Python CLI's normal defaults (including
+environment configuration). `scripts/demo_status.sh` checks the app/tunnel tmux
 sessions and the local Gradio configuration endpoint. No script installs software,
 downloads models, provisions environments, or starts/modifies vLLM.
 

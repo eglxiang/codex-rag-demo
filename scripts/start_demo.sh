@@ -16,5 +16,8 @@ if [[ ! -x "$venv_dir/bin/python" ]]; then
 fi
 export GRADIO_ANALYTICS_ENABLED=${GRADIO_ANALYTICS_ENABLED:-False}
 cd -- "$project_dir"
+if [[ $# -eq 0 ]]; then
+    set -- --frames outputs/frames/frames.json --model Qwen/Qwen2.5-7B-Instruct
+fi
 # gradio_demo.py fixes server_name=127.0.0.1, server_port=7860, share=False.
 exec "$venv_dir/bin/python" "$project_dir/gradio_demo.py" "$@"

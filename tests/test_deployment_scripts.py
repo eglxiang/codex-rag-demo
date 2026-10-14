@@ -46,6 +46,20 @@ class DeploymentScriptTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("No dependencies will be installed", result.stderr)
 
+    def test_demo_no_arguments_uses_brtx_defaults(self):
+        self.executable(self.project / ".venv/bin/python", 'printf "%s\\n" "$@"\n')
+        result = self.run_script("start_demo.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), [str(self.project / "gradio_demo.py"),
+            "--frames", "outputs/frames/frames.json", "--model", "Qwen/Qwen2.5-7B-Instruct"])
+
+    def test_demo_explicit_arguments_replace_all_defaults(self):
+        self.executable(self.project / ".venv/bin/python", 'printf "%s\\n" "$@"\n')
+        result = self.run_script("start_demo.sh", "--frames", "custom frames.json", "--model", "custom-model")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), [str(self.project / "gradio_demo.py"),
+            "--frames", "custom frames.json", "--model", "custom-model"])
+
     def test_optional_tunnel_has_fixed_local_target_and_no_update(self):
         binary = self.root / "cloudflared test"
         self.executable(binary, 'printf "%s\\n" "$@"\n')
